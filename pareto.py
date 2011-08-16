@@ -45,16 +45,16 @@ class Pareto:
         return (1.0 * pow(self.__beta, 2) * self.__alpha) \
                / (pow(self.__alpha - 1, 2) * (self.__alpha - 2))
 
-    # Compute maximum-likelihood estimator for alpha
-    # Warning: UNTESTED
-    def mle(x):
-        print "Warning: Pareto.mle() is UNTESTED !"
+    # Compute maximum-likelihood estimator for alpha.
+    # It is assumed that the beta parameter is known.
+    @classmethod
+    def mle(cls, x, beta=1.0):
         n= len(x)
         y= 0
         # note assumption that MLE for beta = 1
         for i in x:
-            y+= (ln(x)-ln(1))
-        return (1.0*n)/b
+            y+= (math.log(i)-math.log(beta))
+        return (1.0*n)/y
 
 
 # -----[ Test application ]------------------------------------------
