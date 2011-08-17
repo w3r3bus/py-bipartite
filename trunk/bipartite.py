@@ -41,15 +41,16 @@
 # ===================================================================
 
 
-import igraph as ig
+import igraph
 import igraph.drawing
-from pareto import *
+import numpy
+import random
+import matplotlib
+matplotlib.use("TkAgg")
+import matplotlib.pyplot as plt
 
-
-#from zipf import *
-#import matplotlib
-#matplotlib.use("TkAgg")
-#import matplotlib.pyplot as plt
+from pareto import Pareto
+from mrinfo import MRINFO
 
 
 # -----[ Global options ]--------------------------------------------
@@ -121,7 +122,7 @@ def bipartite_cm(degrees2, degrees3):
         edges.append((stubs2[i][0], stubs3[i][0]))
 
     # Generate Bipartite graph
-    g= ig.Graph.Bipartite(vertices_types, edges)
+    g= igraph.Graph.Bipartite(vertices_types, edges)
 
     return g
 
@@ -253,42 +254,6 @@ def bipartite_op_generate(g, params):
     return bipartite_cm(degrees2, degrees3)
 
 
-# -----[ ??? ]-----
-# To be removed ?
-# Can we rely on the Python or igraph API to do this
-# in a shorter way ?
-def bloub():
-    #d2= g.degree(range(len(degrees2)))
-    #log(1, "*** %d ***" % (len(d2)))
-    # Compute degree distribution
-    #freq= {}
-    #max= 0
-    #for i in range(len(d2)):
-    #    if d2[i] > max:
-    #        max= d2[i]
-    #    if d2[i] not in freq:
-    #        freq[d2[i]]= 1
-    #    else:
-    #        freq[d2[i]]+= 1
-    #cumul= 0
-    #print "0\t0"
-    #for i in range(max+1):
-    #    if i in freq:
-    #        v= freq[i]
-    #        cumul+= v
-    #        print "%d\t%d\t%d" % (i, v, cumul)
-    #
-    #plt.figure()
-    #plt.subplot(2, 1, 1)
-    #plt.hist(d2, cumulative=True, normed=True, histtype='step')
-    #plt.subplot(2, 1, 2)
-    #plt.hist(degrees2, cumulative=True, normed=True, histtype='step')
-    #plt.show()
-
-    #raw_input()
-    return
-
-
 # -----[ bipartite_op_plot ]-----------------------------------------
 #
 # -------------------------------------------------------------------
@@ -364,6 +329,103 @@ def bipartite_op_project(g, params):
     return g_l3
 
 
+# -----[ bipartite_op_orphans ]--------------------------------------
+# Remove orphans (o-degree) nodes
+# -------------------------------------------------------------------
+def bipartite_op_orphans(g, params):
+    if (g == None):
+        error("no graph to remove orphans from")
+    orphans= [idx for idx in range(g.vcount()) if g.degree(idx)==0]
+    g.delete_vertices(orphans)
+    print "  Number of orphan nodes removed: %d" % (len(orphans))
+    return g
+
+
+# -----[ bipartite_op_stats ]----------------------------------------
+# Compute some statistics:
+# - number of vertices/edges
+# - overall/L2/L3 degree frequency distribution
+# - Pareto maximum likelyhood estimators
+# -------------------------------------------------------------------
+def bipartite_op_stats(g, params):
+    if (g == None):
+        error("no graph to compute statistics")
+    bipartite= g.is_bipartite()
+    if (bipartite):
+        l2_vertices= [idx for idx in range(g.vcount()) if not(g.vs["type"][idx])]
+        l3_vertices= [idx for idx in range(g.vcount()) if g.vs["type"][idx]]
+    print "  Number of vertices: %d" % (g.vcount())
+    if (bipartite):
+        print "  Number of L2 vertices: %d" % (len(l2_vertices))
+        print "  Number of L3 vertices: %d" % (len(l3_vertices))
+    print "  Number of edges: %d" % (g.ecount())
+
+    degrees= g.degree()
+    if (bipartite):
+        l2_degrees= g.degree(l2_vertices)
+        l3_degrees= g.degree(l3_vertices)
+    max_degree= g.maxdegree()
+    print "  Highest degree"
+    print "    overall: %d" % (max_degree)
+    if (bipartite):
+        print "    L2: %d" % (g.maxdegree(l2_vertices))
+        print "    L3: %d" % (g.maxdegree(l3_vertices))
+    degrees_hist= numpy.histogram(degrees, max_degree)
+    if (bipartite):
+        l2_degrees_hist= numpy.histogram(l2_degrees, max_degree)
+        l3_degrees_hist= numpy.histogram(l3_degrees, max_degree)
+
+    print "  Maximum Likelihood Estimator:"
+    print "    overall (beta=1): %.20f" % (Pareto.mle(degrees))
+    if (bipartite):
+        print "    L2 (beta=1): %.20f" % (Pareto.mle(l2_degrees))
+        print "    L2 (beta=2): %.20f" % (Pareto.mle(l2_degrees, 2.0))
+        print "    L3 (beta=1): %.20f" % (Pareto.mle(l3_degrees))
+
+    plt.figure()
+    #plt.suptitle(???)
+    plt.subplots_adjust(hspace=0.35)
+    if (bipartite):
+        plt.subplot(3, 2, 1)
+    else:
+        plt.subplot(1, 2, 1)
+    plt.title("Overall degree distribution", fontsize=10)
+    plt.hist(degrees, bins=max_degree, range=(0, max_degree), cumulative=False, normed=False, histtype='bar')
+    if (bipartite):
+        plt.subplot(3, 2, 2)
+    else:
+        plt.subplot(1, 2, 2)
+    plt.title("(log-log)", fontsize=10)
+    plt.grid()
+    plt.loglog(range(0, max_degree), degrees_hist[0], 'o')
+    if (bipartite):
+        plt.subplot(3, 2, 3)
+        plt.title("L2 degree distribution", fontsize=10)
+        plt.hist(l2_degrees, bins=max_degree, range=(0, max_degree), cumulative=False, normed=False, histtype='bar')
+        plt.subplot(3, 2, 4)
+        plt.title("(log-log)", fontsize=10)
+        plt.grid()
+        plt.loglog(range(0, max_degree), l2_degrees_hist[0], 'o')
+        plt.subplot(3, 2, 5)
+        plt.title("L3 degree distribution", fontsize=10)
+        plt.hist(l3_degrees, bins=max_degree, range=(0, max_degree), cumulative=False, normed=False, histtype='bar')
+        plt.subplot(3, 2, 6)
+        plt.title("(log-log)", fontsize=10)
+        plt.grid()
+        plt.loglog(range(0, max_degree), l3_degrees_hist[0], 'o')
+    plt.show()
+
+    return g
+
+
+# -----[ bipartite_op_mrinfo ]---------------------------------------
+# Load an 'mrinfo' file
+# -------------------------------------------------------------------
+def bipartite_op_mrinfo(g, params):
+    filename= params[0]
+    return MRINFO.load(filename)
+
+
 # -----[ bipartite_op_toy ]------------------------------------------
 # Generates a toy bipartite graph.
 # This is mainly used for demo/debugging.
@@ -383,9 +445,12 @@ operations= {
     "check":(bipartite_op_check, 0),
     "generate":(bipartite_op_generate, 6),
     "giant":(bipartite_op_giant, 0),
+    "mrinfo":(bipartite_op_mrinfo, 1),
+    "orphans":(bipartite_op_orphans, 0),
     "plot":(bipartite_op_plot, 0),
     "project":(bipartite_op_project, 0),
     "save":(bipartite_op_save, 2),
+    "stats":(bipartite_op_stats, 0),
     "toy":(bipartite_op_toy, 0),
     }
 
