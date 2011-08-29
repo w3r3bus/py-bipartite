@@ -47,12 +47,19 @@ class Pareto:
 
     # Compute maximum-likelihood estimator for alpha.
     # It is assumed that the beta parameter is known.
+    # Notes:
+    #   - if there is a 0-valued sample, NaN is returned
+    #   - if there is a sample with value less than beta, NaN is returned
     @classmethod
     def mle(cls, x, beta=1.0):
         n= len(x)
         y= 0
         # note assumption that MLE for beta = 1
         for i in x:
+            if (i == 0):
+                return float('nan');
+            if (i < beta):
+                return float('nan');
             y+= (math.log(i)-math.log(beta))
         return (1.0*n)/y
 
