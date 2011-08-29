@@ -53,6 +53,13 @@ from pareto import Pareto
 from mrinfo import MRINFO
 
 
+# -----[ Constants ]-------------------------------------------------
+TYPE_L2= False
+TYPE_L3= True
+COLOR_DICT= {TYPE_L2:"blue", TYPE_L3:"green"}
+SHAPE_DICT= {TYPE_L2:"rectangle", TYPE_L3:"circle"}
+
+
 # -----[ Global options ]--------------------------------------------
 verbosity = 0
 max_redraws = 1000000
@@ -95,14 +102,14 @@ def bipartite_cm(degrees2, degrees3):
     # Generate L2/L3 stubs according to the respective prescribed
     # degree sequences
     for i in range(len(degrees2)):
-        vertices_types.append(False)
+        vertices_types.append(TYPE_L2)
         td2+= degrees2[i]
         for j in range(degrees2[i]):
             stubs2.append((id, j))
         id+= 1
         
     for i in range(len(degrees3)):
-        vertices_types.append(True)
+        vertices_types.append(TYPE_L3)
         td3+= degrees3[i]
         for j in range(degrees3[i]):
             stubs3.append((id, j))
@@ -258,12 +265,22 @@ def bipartite_op_generate(g, params):
 #
 # -------------------------------------------------------------------
 def bipartite_op_plot(g, params):
+    if (len(params) < 1):
+        filename= params[0]
+    else:
+        filename= None
     layout= g.layout("fr")
     #layout= g.layout("kk")
-    color_dict= {True:"green", False:"blue"}
     if "type" in g.vs.attribute_names():
-        g.vs["color"]= [color_dict[type] for type in g.vs["type"]]
-    igraph.drawing.plot(g, layout=layout)
+        g.vs["color"]= [COLOR_DICT[type] for type in g.vs["type"]]
+        g.vs["shape"]= [SHAPE_DICT[type] for type in g.vs["type"]]
+    else:
+        g.vs["color"]= [COLOR_DICT[TYPE_L3] for idx in range(g.vcount())]
+        g.vs["shape"]= [SHAPE_DICT[TYPE_L3] for idx in range(g.vcount())]
+    if filename:
+        igraph.drawing.plot(g, layout=layout, target=filename)
+    else:
+        igraph.drawing.plot(g, layout=layout)
     return g
 
 
@@ -370,16 +387,20 @@ def bipartite_op_stats(g, params):
     if (bipartite):
         print "    L2: %d" % (g.maxdegree(l2_vertices))
         print "    L3: %d" % (g.maxdegree(l3_vertices))
-    degrees_hist= numpy.histogram(degrees, max_degree)
+    degrees_hist= numpy.histogram(degrees, bins=max_degree,
+                                  range=(0, max_degree))
     if (bipartite):
-        l2_degrees_hist= numpy.histogram(l2_degrees, max_degree)
-        l3_degrees_hist= numpy.histogram(l3_degrees, max_degree)
+        l2_degrees_hist= numpy.histogram(l2_degrees, bins=max_degree,
+                                         range=(0, max_degree))
+        l3_degrees_hist= numpy.histogram(l3_degrees, bins=max_degree,
+                                         range=(0, max_degree))
 
     print "  Maximum Likelihood Estimator:"
     print "    overall (beta=1): %.20f" % (Pareto.mle(degrees))
     if (bipartite):
         print "    L2 (beta=1): %.20f" % (Pareto.mle(l2_degrees))
         print "    L2 (beta=2): %.20f" % (Pareto.mle(l2_degrees, 2.0))
+        print "    L2 (beta=3): %.20f" % (Pareto.mle(l2_degrees, 3.0))
         print "    L3 (beta=1): %.20f" % (Pareto.mle(l3_degrees))
 
     plt.figure()
@@ -423,6 +444,7 @@ def bipartite_op_stats(g, params):
 # -------------------------------------------------------------------
 def bipartite_op_mrinfo(g, params):
     filename= params[0]
+    print "  Load graph \"%s\"" % (filename)
     return MRINFO.load(filename)
 
 
@@ -442,16 +464,16 @@ def bipartite_op_toy(g, params):
 #   2nd param = number of arguments
 # -------------------------------------------------------------------
 operations= {
-    "check":(bipartite_op_check, 0),
-    "generate":(bipartite_op_generate, 6),
-    "giant":(bipartite_op_giant, 0),
-    "mrinfo":(bipartite_op_mrinfo, 1),
-    "orphans":(bipartite_op_orphans, 0),
-    "plot":(bipartite_op_plot, 0),
-    "project":(bipartite_op_project, 0),
-    "save":(bipartite_op_save, 2),
-    "stats":(bipartite_op_stats, 0),
-    "toy":(bipartite_op_toy, 0),
+    "check":(bipartite_op_check, (0, 0)),
+    "generate":(bipartite_op_generate, (6, 6)),
+    "giant":(bipartite_op_giant, (0, 0)),
+    "mrinfo":(bipartite_op_mrinfo, (1, 1)),
+    "orphans":(bipartite_op_orphans, (0, 0)),
+    "plot":(bipartite_op_plot, (0, 1)),
+    "project":(bipartite_op_project, (0, 0)),
+    "save":(bipartite_op_save, (2, 2)),
+    "stats":(bipartite_op_stats, (0, 0)),
+    "toy":(bipartite_op_toy, (0, 0)),
     }
 
 
@@ -485,10 +507,14 @@ def usage():
     print "  - giant"
     print "      Extract the largest connected component of a pre-computed graph."
     print
-    print "  - plot"
-    print "      Plot a pre-computed graph. This is currently limited"
-    print "      to plotting on the display, using cairo and the Fruchterman-"
-    print "      Reingold layout algorithm."
+    print "  - mrinfo:FILENAME"
+    print "      Load a bipartite graph in the MRINFO format."
+    print
+    print "  - plot[:FILENAME]"
+    print "      Plot a pre-computed graph. Plotting is done using the cairo library"
+    print "      with the Fruchterman-Reingold layout algorithm. An optional FILENAME"
+    print "      can be provided. The FILENAME extension specifies the output format."
+    print "      Available formats are PNG, PDF ans SVG."
     print
     print "  - save:FILENAME:FORMAT"
     print "      Save a pre-computed graph into a file."
@@ -614,10 +640,13 @@ def main():
                 ndashes= ''.join(['-' for i in range(79-6-len(sop))])
                 print "=[ %s ]=%s" % (sop.upper(), ndashes)
                 func= operations[sop][0]
-                num_args= operations[sop][1]
-                if (len(op_fields[1:]) != num_args):
-                    error("operation \"%s\" requires %s argument(s)" % \
-                          (sop, num_args))
+                min_args= operations[sop][1][0]
+                max_args= operations[sop][1][1]
+                if (len(op_fields[1:]) < min_args):
+                    error("operation \"%s\" requires %d argument(s)" % \
+                          (sop, min_args))
+                elif (len(op_fields[1:]) > max_args):
+                    error("operation \"%s\" takes max. %d argument(s)" % (sop, max_args))
                 g= func(g, op_fields[1:])
                 found= True
                 break
