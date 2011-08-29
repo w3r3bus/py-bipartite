@@ -50,12 +50,16 @@ class MRINFO:
                         nodes[name]= next_node_id
                         types.append(m == None)
                         next_node_id+= 1
+                # L2/L3 edges are added as is.
                 if (types[nodes[src]] != types[nodes[dst]]):
                     edges.append((nodes[src], nodes[dst]))
+                # L3/L3 edges are converted to a new L2 vertex +
+                # two L2/L3 edges.
                 else:
-                    num_ignored+= 1
-
-        print "  Number of edges ignored: %d" % (num_ignored)
+                    types.append(False)
+                    edges.append((nodes[src], next_node_id))
+                    edges.append((next_node_id, nodes[dst]))
+                    next_node_id+= 1
 
         # To create an igraph bipartite graph we need to provide the
         # types of vertices (False for L2 nodes, True for L3 nodes)
