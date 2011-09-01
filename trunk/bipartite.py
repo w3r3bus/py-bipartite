@@ -398,10 +398,15 @@ def bipartite_op_stats(g, params):
     print "  Maximum Likelihood Estimator:"
     print "    overall (beta=1): %.20f" % (Pareto.mle(degrees))
     if (bipartite):
-        print "    L2 (beta=1): %.20f" % (Pareto.mle(l2_degrees))
-        print "    L2 (beta=2): %.20f" % (Pareto.mle(l2_degrees, 2.0))
-        print "    L2 (beta=3): %.20f" % (Pareto.mle(l2_degrees, 3.0))
-        print "    L3 (beta=1): %.20f" % (Pareto.mle(l3_degrees))
+        l2_mle= {}
+        l2_mle[1]= Pareto.mle(l2_degrees)
+        print "    L2 (beta=1): %.20f" % (l2_mle[1])
+        l2_mle[2]= Pareto.mle(l2_degrees, 2.0)
+        print "    L2 (beta=2): %.20f" % (l2_mle[2])
+        l2_mle[3]= Pareto.mle(l2_degrees, 3.0)
+        print "    L2 (beta=3): %.20f" % (l2_mle[3])
+        l3_mle= Pareto.mle(l3_degrees)
+        print "    L3 (beta=1): %.20f" % (l3_mle)
 
     plt.figure()
     #plt.suptitle(???)
@@ -427,6 +432,16 @@ def bipartite_op_stats(g, params):
         plt.title("(log-log)", fontsize=10)
         plt.grid()
         plt.loglog(range(0, max_degree), l2_degrees_hist[0], 'o')
+        for beta in [1, 2, 3]:
+            bloub= []
+            p= Pareto(l2_mle[beta], beta)
+            n= 0
+            for k in l2_degrees:
+                if k >= beta:
+                    n+= 1
+            for k in range(beta, max_degree, 1):
+                bloub.append(p.pdf(k)*n)
+            plt.plot(range(beta, max_degree, 1), bloub)
         plt.subplot(3, 2, 5)
         plt.title("L3 degree distribution", fontsize=10)
         plt.hist(l3_degrees, bins=max_degree, range=(0, max_degree), cumulative=False, normed=False, histtype='bar')
@@ -434,6 +449,13 @@ def bipartite_op_stats(g, params):
         plt.title("(log-log)", fontsize=10)
         plt.grid()
         plt.loglog(range(0, max_degree), l3_degrees_hist[0], 'o')
+        bloub= []
+        p= Pareto(l3_mle)
+        for k in range(1, max_degree, 1):
+            bloub.append(p.pdf(k)*len(l3_degrees))
+        print bloub
+        plt.plot(range(1, max_degree, 1), bloub)
+
     plt.show()
 
     return g
@@ -573,10 +595,10 @@ class DegreeSeqParams:
             alpha2= other.get_alpha()
             beta2= other.get_beta()
             n2= other.get_n()
-            self.__n= (1.0 * alpha2) / self.__alpha \
-                      * (1.0 * beta2) / self.__beta \
-                      * n2 \
-                      * (self.__alpha - 1.0) / (alpha2 - 1.0)
+            self.__n= int((1.0 * alpha2) / self.__alpha \
+                          * (1.0 * beta2) / self.__beta \
+                          * n2 \
+                          * (self.__alpha - 1.0) / (alpha2 - 1.0))
                       
         elif (self.__alpha < 0):
             n2= other.get_n()
