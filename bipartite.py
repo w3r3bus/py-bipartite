@@ -58,6 +58,7 @@ TYPE_L2= False
 TYPE_L3= True
 COLOR_DICT= {TYPE_L2:"blue", TYPE_L3:"green"}
 SHAPE_DICT= {TYPE_L2:"rectangle", TYPE_L3:"circle"}
+STR_DICT= {TYPE_L2:"L2", TYPE_L3:"L3"}
 
 
 # -----[ Global options ]--------------------------------------------
@@ -284,6 +285,69 @@ def bipartite_op_plot(g, params):
     return g
 
 
+def save_bipartite_edgelist(g, filename):
+    types= g.vs["type"]
+    with open(filename, "w") as f:
+        for v in range(g.vcount()):
+            print >> f, v, STR_DICT[types[v]]
+        print >> f
+        for e in g.get_edgelist():
+            print >> f, e[0], e[1]
+    return
+
+
+def load_bipartite_edgelist(filename):
+    edge_types= {}
+    edges= []
+    state= 0
+    with open(filename, "r") as f:
+        for line in f:
+            line= line.rstrip("\r\n")
+            assert(state in [0, 1])
+            if len(line) == 0:
+                state+= 1
+                continue
+            fields= line.split()
+            assert(len(fields) == 2)
+            if (state == 0):
+                vertex= int(fields[0])
+                assert(fields[1] in ["L2", "L3"])
+                if fields[1] == "L2":
+                    level= TYPE_L2
+                else:
+                    level= TYPE_L3
+                edge_types[vertex]= level
+            elif (state == 1):
+                source= int(fields[0])
+                target= int(fields[1])
+                edges.append((source, target))
+                
+    types= [edge_types[i] for i in sorted(edge_types)]
+    g= igraph.Graph.Bipartite(types, edges)
+    return g
+
+
+# -----[ bipartite_op_load ]-----------------------------------------
+#
+# -------------------------------------------------------------------
+def bipartite_op_load(g, params):
+    filename= params[0]
+    format= params[1]
+    if (format == "gml"):
+        g= igraph.Graph.Read_GML(filename)
+    elif (format == "edgelist"):
+        g= igraph.Graph.Read_Edgelist(filename)
+    if (format == "edgelistb"):
+        g= load_bipartite_edgelist(filename)
+    elif (format == "graphml"):
+        f= igraph.Graph.Read_GraphML(filename)
+    elif (format == "graphmlz"):
+        f= igraph.Graph.Read_GraphMLz(filename)
+    else:
+        error("unknown file format \"%s\"" % (format))
+    return g
+
+
 # -----[ bipartite_op_save ]-----------------------------------------
 #
 # -------------------------------------------------------------------
@@ -294,7 +358,9 @@ def bipartite_op_save(g, params):
     format= params[1]
     print "  Save graph to file \"%s\" with format \"%s\"" \
           % (filename, format)
-    if (format == "graphml"):
+    if (format == "gml"):
+        g.write_gml(filename)
+    elif (format == "graphml"):
         g.write_graphml(filename)
     elif (format == "graphmlz"):
         g.write_graphmlz(filename)
@@ -302,6 +368,8 @@ def bipartite_op_save(g, params):
         g.write_dot(filename)
     elif (format == "edgelist"):
         g.write_edgelist(filename)
+    elif (format == "edgelistb"):
+        save_bipartite_edgelist(g, filename)
     else:
         error("unknown file format \"%s\"" % (format))
     return g
@@ -358,6 +426,178 @@ def bipartite_op_orphans(g, params):
     return g
 
 
+FONT_SIZE= 10
+
+def _estimate_pareto_params(degrees, beta_range):
+    alphas= {}
+    for beta in beta_range:
+        alphas[beta]= Pareto.mle(degrees, beta)
+    return alphas
+
+def _plot_pareto_pdf(ax, alpha, beta, degrees, max_degree, hist=False):
+    degree_freq= []
+    p= Pareto(alpha, beta)
+    n= 0
+    for k in degrees:
+        if k >= beta:
+            n+= 1
+    total= 0
+    xrange= range(beta, max_degree, 1)
+    for k in xrange:
+        pdf= p.pdf(k)
+        if not(hist):
+            degree_freq.append(pdf)
+        else:
+            #degree_freq.append(total+pdf)
+            degree_freq.append(p.cdf(k))
+        total+= pdf
+    degree_freq= [i * n / total for i in degree_freq]
+        
+    if not(hist):
+        ax.plot(xrange, degree_freq)
+    else:
+        ax.plot([i - 0.5 for i in xrange], degree_freq, 'v')
+    return
+
+def _plot_degree_hist(ax, degrees, max_degree):
+    ax.set_title("Degree distribution", fontsize=FONT_SIZE)
+    ax.hist(degrees, bins=max_degree, range=(0, max_degree),
+            cumulative=False, normed=False, histtype='bar')
+    return
+
+def _plot_degree_dist_loglog(ax, degrees, max_degree):
+    degrees_hist= numpy.histogram(degrees, bins=max_degree,
+                                  range=(0, max_degree))
+    ax.set_title("(log-log)", fontsize=FONT_SIZE)
+    ax.grid()
+    ax.loglog(range(0, max_degree), degrees_hist[0], 'o')    
+    return
+
+def _dump_degrees_to_file(degrees, filename):
+    file= open(filename, 'w')
+    for i in range(len(degrees)):
+        file.write("%d\n" % (degrees[i]))
+    file.close()
+    return
+
+def _bipartite_op_stats_flat(g, output=None):
+    print "  Number of vertices: %d" % (g.vcount())
+    print "  Number of edges: %d" % (g.ecount())
+    degrees= g.degree()
+    max_degree= g.maxdegree()
+    print "  Highest degree: %d" % (max_degree)
+    mle= Pareto.mle(degrees)
+    print "  Maximum Likelihood Estimator:"
+    print "    alpha (beta=1): %.20f" % (mle)
+    if (output):
+        fig=plt.figure()
+        ax= plt.subplot(1, 1, 1)
+        _plot_degree_hist(ax, degrees, max_degree)
+        filename= "degree-hist-%s" % (output)
+        print "  Create \"%s\"" % (filename)
+        fig.savefig(filename)
+        fig=plt.figure()
+        ax= plt.subplot(1, 1, 1)
+        _plot_degree_dist_loglog(ax, degrees, max_degree)
+        filename= "degree-dist-loglog-%s" % (output)
+        print "  Create \"%s\"" % (filename)
+        fig.savefig(filename)
+    else:
+        fig= plt.figure()
+        ax= plt.subplot(1, 2, 1)
+        _plot_degree_hist(ax, degrees, max_degree)
+        ax= plt.subplot(1, 2, 2)
+        _plot_degree_dist_loglog(ax, degrees, max_degree)
+        fig.show()
+    return g
+
+def _bipartite_op_stats_bipartite(g, output=None):
+    l2_vertices= [idx for idx in range(g.vcount()) if not(g.vs["type"][idx])]
+    l3_vertices= [idx for idx in range(g.vcount()) if g.vs["type"][idx]]
+    print "  Number of L2 vertices: %d" % (len(l2_vertices))
+    print "  Number of L3 vertices: %d" % (len(l3_vertices))
+    print "  Number of edges: %d" % (g.ecount())
+
+    l2_degrees= g.degree(l2_vertices)
+    l3_degrees= g.degree(l3_vertices)
+
+    l3_degrees= [i for i in l3_degrees if i > 0]
+    
+    _dump_degrees_to_file(l2_degrees, "l2_degrees.txt")
+    _dump_degrees_to_file(l3_degrees, "l3_degrees.txt")
+    max_l2_degree= g.maxdegree(l2_vertices)
+    max_l3_degree= g.maxdegree(l3_vertices)
+    if (max_l2_degree > max_l3_degree):
+        max_degree= max_l2_degree
+    else:
+        max_degree= max_l3_degree
+    print "  Highest L2 degree: %d" % (max_l2_degree)
+    print "  Highest L3 degree: %d" % (max_l3_degree)
+    l2_degrees_hist= numpy.histogram(l2_degrees, bins=max_degree,
+                                     range=(0, max_degree))
+    l3_degrees_hist= numpy.histogram(l3_degrees, bins=max_degree,
+                                     range=(0, max_degree))
+
+    print "  Maximum Likelihood Estimator:"
+    l2_beta_range= range(1, 4)
+    l2_mle= _estimate_pareto_params(l2_degrees, l2_beta_range)
+    for beta in l2_beta_range:
+        print "    alpha (L2, beta=%d): %.20f" % (beta, l2_mle[beta])
+    l3_mle= Pareto.mle(l3_degrees)
+    print "    alpha (L3, beta=1): %.20f" % (l3_mle)
+
+    if (output):
+        fig= plt.figure()
+        ax= plt.subplot(1, 1, 1)
+        _plot_degree_hist(ax, l2_degrees, max_degree)
+        for beta in l2_beta_range:
+            _plot_pareto_pdf(ax, l2_mle[beta], beta, l2_degrees, max_degree, hist=False)
+        filename= "l2-degree-hist-%s" % (output)
+        print "  Create \"%s\"" % (filename)
+        fig.savefig(filename)
+        
+        fig= plt.figure()
+        ax= plt.subplot(1, 1, 1)
+        _plot_degree_dist_loglog(ax, l2_degrees, max_degree)
+        for beta in l2_beta_range:
+            _plot_pareto_pdf(ax, l2_mle[beta], beta, l2_degrees, max_degree)
+        filename= "l2-degree-dist-loglog-%s" % (output)
+        print "  Create \"%s\"" % (filename)
+        fig.savefig(filename)
+        
+        fig= plt.figure()
+        ax= plt.subplot(1, 1, 1)
+        _plot_degree_hist(ax, l3_degrees, max_degree)
+        _plot_pareto_pdf(ax, l3_mle, 1, l3_degrees, max_degree, hist=False)
+        filename= "l3-degree-hist-%s" % (output)
+        print "  Create \"%s\"" % (filename)
+        fig.savefig(filename)
+        
+        fig= plt.figure()
+        ax= plt.subplot(1, 1, 1)
+        _plot_degree_dist_loglog(ax, l3_degrees, max_degree)
+        _plot_pareto_pdf(ax, l3_mle, 1, l3_degrees, max_degree)
+        filename= "l3-degree-dist-loglog-%s" % (output)
+        print "  Create \"%s\"" % (filename)
+        fig.savefig(filename)
+    else:
+        fig= plt.figure()
+        ax= plt.subplot(2, 2, 1)
+        _plot_degree_hist(ax, l2_degrees, max_degree)
+        ax= plt.subplot(2, 2, 2)
+        _plot_degree_dist_loglog(ax, l2_degrees, max_degree)
+        for beta in l2_beta_range:
+            _plot_pareto_pdf(ax, l2_mle[beta], beta, l2_degrees, max_degree)
+
+        ax= plt.subplot(2, 2, 3)
+        _plot_degree_hist(ax, l3_degrees, max_degree)
+        ax= plt.subplot(2, 2, 4)
+        _plot_degree_dist_loglog(ax, l3_degrees, max_degree)
+        _plot_pareto_pdf(ax, l3_mle, 1, l3_degrees, max_degree)
+        fig.show()
+
+    return g
+
 # -----[ bipartite_op_stats ]----------------------------------------
 # Compute some statistics:
 # - number of vertices/edges
@@ -367,96 +607,28 @@ def bipartite_op_orphans(g, params):
 def bipartite_op_stats(g, params):
     if (g == None):
         error("no graph to compute statistics")
+    output= None
+    if (len(params) > 0):
+        output= params[0]
     bipartite= g.is_bipartite()
     if (bipartite):
-        l2_vertices= [idx for idx in range(g.vcount()) if not(g.vs["type"][idx])]
-        l3_vertices= [idx for idx in range(g.vcount()) if g.vs["type"][idx]]
-    print "  Number of vertices: %d" % (g.vcount())
-    if (bipartite):
-        print "  Number of L2 vertices: %d" % (len(l2_vertices))
-        print "  Number of L3 vertices: %d" % (len(l3_vertices))
-    print "  Number of edges: %d" % (g.ecount())
-
-    degrees= g.degree()
-    if (bipartite):
-        l2_degrees= g.degree(l2_vertices)
-        l3_degrees= g.degree(l3_vertices)
-    max_degree= g.maxdegree()
-    print "  Highest degree"
-    print "    overall: %d" % (max_degree)
-    if (bipartite):
-        print "    L2: %d" % (g.maxdegree(l2_vertices))
-        print "    L3: %d" % (g.maxdegree(l3_vertices))
-    degrees_hist= numpy.histogram(degrees, bins=max_degree,
-                                  range=(0, max_degree))
-    if (bipartite):
-        l2_degrees_hist= numpy.histogram(l2_degrees, bins=max_degree,
-                                         range=(0, max_degree))
-        l3_degrees_hist= numpy.histogram(l3_degrees, bins=max_degree,
-                                         range=(0, max_degree))
-
-    print "  Maximum Likelihood Estimator:"
-    print "    overall (beta=1): %.20f" % (Pareto.mle(degrees))
-    if (bipartite):
-        l2_mle= {}
-        l2_mle[1]= Pareto.mle(l2_degrees)
-        print "    L2 (beta=1): %.20f" % (l2_mle[1])
-        l2_mle[2]= Pareto.mle(l2_degrees, 2.0)
-        print "    L2 (beta=2): %.20f" % (l2_mle[2])
-        l2_mle[3]= Pareto.mle(l2_degrees, 3.0)
-        print "    L2 (beta=3): %.20f" % (l2_mle[3])
-        l3_mle= Pareto.mle(l3_degrees)
-        print "    L3 (beta=1): %.20f" % (l3_mle)
-
-    plt.figure()
-    #plt.suptitle(???)
-    plt.subplots_adjust(hspace=0.35)
-    if (bipartite):
-        plt.subplot(3, 2, 1)
+        return _bipartite_op_stats_bipartite(g, output)
     else:
-        plt.subplot(1, 2, 1)
-    plt.title("Overall degree distribution", fontsize=10)
-    plt.hist(degrees, bins=max_degree, range=(0, max_degree), cumulative=False, normed=False, histtype='bar')
-    if (bipartite):
-        plt.subplot(3, 2, 2)
-    else:
-        plt.subplot(1, 2, 2)
-    plt.title("(log-log)", fontsize=10)
-    plt.grid()
-    plt.loglog(range(0, max_degree), degrees_hist[0], 'o')
-    if (bipartite):
-        plt.subplot(3, 2, 3)
-        plt.title("L2 degree distribution", fontsize=10)
-        plt.hist(l2_degrees, bins=max_degree, range=(0, max_degree), cumulative=False, normed=False, histtype='bar')
-        plt.subplot(3, 2, 4)
-        plt.title("(log-log)", fontsize=10)
-        plt.grid()
-        plt.loglog(range(0, max_degree), l2_degrees_hist[0], 'o')
-        for beta in [1, 2, 3]:
-            bloub= []
-            p= Pareto(l2_mle[beta], beta)
-            n= 0
-            for k in l2_degrees:
-                if k >= beta:
-                    n+= 1
-            for k in range(beta, max_degree, 1):
-                bloub.append(p.pdf(k)*n)
-            plt.plot(range(beta, max_degree, 1), bloub)
-        plt.subplot(3, 2, 5)
-        plt.title("L3 degree distribution", fontsize=10)
-        plt.hist(l3_degrees, bins=max_degree, range=(0, max_degree), cumulative=False, normed=False, histtype='bar')
-        plt.subplot(3, 2, 6)
-        plt.title("(log-log)", fontsize=10)
-        plt.grid()
-        plt.loglog(range(0, max_degree), l3_degrees_hist[0], 'o')
-        bloub= []
-        p= Pareto(l3_mle)
-        for k in range(1, max_degree, 1):
-            bloub.append(p.pdf(k)*len(l3_degrees))
-        print bloub
-        plt.plot(range(1, max_degree, 1), bloub)
+        return _bipartite_op_stats_flat(g, output)
 
-    plt.show()
+    (figx, figy)= plt.rcParams["figure.figsize"]
+    figdpi= plt.rcParams["figure.dpi"]
+    if not(bipartite):
+        fig= plt.figure(figsize=(figx, figy/2+figy*0.05))
+        plt.subplots_adjust(top=0.8, bottom=0.2)
+    else:
+        fig=plt.figure()
+
+
+    if (output == None):
+        plt.show()
+    else:
+        fig.savefig(output);
 
     return g
 
@@ -466,9 +638,18 @@ def bipartite_op_stats(g, params):
 # -------------------------------------------------------------------
 def bipartite_op_mrinfo(g, params):
     filename= params[0]
+    typ= params[1]
     print "  Load graph \"%s\"" % (filename)
-    return MRINFO.load(filename)
-
+    mi= MRINFO(filename)
+    if typ == "flat":
+        return mi.to_graph()
+    elif typ == "bipartite":
+        return mi.to_bipartite()
+    elif typ == "l3l3":
+        return mi.to_l3l3_graph()
+    elif typ == "pure-bipartite":
+        return mi.to_pure_bipartite()
+    error("unknown graph type \"%s\"" % (typ))
 
 # -----[ bipartite_op_toy ]------------------------------------------
 # Generates a toy bipartite graph.
@@ -489,12 +670,13 @@ operations= {
     "check":(bipartite_op_check, (0, 0)),
     "generate":(bipartite_op_generate, (6, 6)),
     "giant":(bipartite_op_giant, (0, 0)),
-    "mrinfo":(bipartite_op_mrinfo, (1, 1)),
+    "load":(bipartite_op_load, (2, 2)),
+    "mrinfo":(bipartite_op_mrinfo, (2, 2)),
     "orphans":(bipartite_op_orphans, (0, 0)),
     "plot":(bipartite_op_plot, (0, 1)),
     "project":(bipartite_op_project, (0, 0)),
     "save":(bipartite_op_save, (2, 2)),
-    "stats":(bipartite_op_stats, (0, 0)),
+    "stats":(bipartite_op_stats, (0, 1)),
     "toy":(bipartite_op_toy, (0, 0)),
     }
 
@@ -538,11 +720,17 @@ def usage():
     print "      can be provided. The FILENAME extension specifies the output format."
     print "      Available formats are PNG, PDF ans SVG."
     print
+    print "  - load:FILENAME:FORMAT"
+    print "      Load a graph from a file."
+    print
+    print "      FILENAME: name of input file"
+    print "      FORMAT  : file format (gml, graphml(z), edgelist, edgelist(b))."
+    print
     print "  - save:FILENAME:FORMAT"
     print "      Save a pre-computed graph into a file."
     print
     print "      FILENAME: name of the output file"
-    print "      FORMAT  : file format (dot, graphml, graphmlz, edgelist)"
+    print "      FORMAT  : file format (dot, gml, graphml(z), edgelist(b))"
     print
     print "  - toy"
     print "      Generates a toy bipartite graph used for demo/debugging."
