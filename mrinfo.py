@@ -1,3 +1,4 @@
+#!/usr/bin/env python2.7
 # ===================================================================
 # Import mrinfo graph file
 #
@@ -39,12 +40,30 @@ class MRINFO_VERTEX:
 
 class MRINFO:
 
+    TYPE_FLAT    = "flat"
+    TYPE_PURE_L3 = "pure-l3"
+    TYPE_BIP     = "bipartite"
+    TYPE_PURE_BIP= "pure-bipartite"
+
     def __init__(self, filename):
         self.__vertices= {}
         self.__id2vertex= {}
         self.__edges= {}
         self.__next_vertex_id= 0
         self.__load(filename)
+        self.__types= {MRINFO.TYPE_FLAT:self.__to_flat_graph,
+                       MRINFO.TYPE_PURE_L3:self.__to_l3_graph,
+                       MRINFO.TYPE_BIP:self.__to_bipartite,
+                       MRINFO.TYPE_PURE_BIP:self.__to_pure_bipartite}
+        return
+    
+
+    @classmethod
+    def get_types(cls):
+        return [MRINFO.TYPE_FLAT,
+                MRINFO.TYPE_PURE_L3,
+                MRINFO.TYPE_BIP,
+                MRINFO.TYPE_PURE_BIP]
 
     # -----[ __add_vertex ]------------------------------------------
     # Add a vertex to the database if it does not already exist.
@@ -110,38 +129,63 @@ class MRINFO:
 
     # -----[ edge_count ]--------------------------------------------
     # Return number of edges
-    def edge_count(self):
+    def edge_count(self, typ=None):
         count= 0
         for head in self.__edges:
             count+= len(self.__edges[head])
         return count
 
     # -----[ to_graph ]----------------------------------------------
+    def to_graph(self, typ):
+        if not(typ in self.__types):
+            return None
+        return self.__types[typ]()
+
+    # -----[ __to_flat_graph ]---------------------------------------
     # Return a flat graph with all vertices and edges
-    def to_graph(self):
+    def __to_flat_graph(self):
         edges= []
         for head in self.__edges:
             for tail in self.__edges[head]:
                 edges.append((self.__vertices[head].get_id(),
                               self.__vertices[tail].get_id()))
-        return igraph.Graph(self.vertex_count(), edges)
+        g= igraph.Graph(self.vertex_count(), edges)
+        for v in g.vs:
+            if self.__id2vertex[v.index].get_type() == MRINFO_VERTEX.L2:
+                v["type"]= False
+            else:
+                v["type"]= True
+        return g
 
-    # -----[ to_l3l3_graph ]-----------------------------------------
+    # -----[ __to_l3_graph ]-----------------------------------------
     # Return a flat graph with only the L3-L3 edges
-    def to_l3l3_graph(self):
+    def __to_l3_graph(self):
+        next_id= 0
+        idmap= {}
         edges= []
+        for i in range(self.vertex_count()):
+            v= self.__get_vertex_by_id(i)
+            if v.get_type() == MRINFO_VERTEX.L3:
+                idx= v.get_id()
+                if not(idx in idmap):
+                    idmap[idx]= next_id
+                    next_id+= 1
         for head in self.__edges:
             for tail in self.__edges[head]:
                 head_n= self.__vertices[head]
                 tail_n= self.__vertices[tail]
                 if head_n.get_type() == MRINFO_VERTEX.L3 and \
                    tail_n.get_type() == MRINFO_VERTEX.L3:
-                    edges.append((head_n.get_id(), tail_n.get_id()))
-        return igraph.Graph(self.vertex_count(), edges)
+                    edges.append((idmap[head_n.get_id()], \
+                                  idmap[tail_n.get_id()]))
+        g= igraph.Graph(len(idmap), edges)
+        for v in g.vs:
+            v["type"]= True
+        return g
 
-    # -----[ to_biparite ]-------------------------------------------
+    # -----[ __to_biparite ]-----------------------------------------
     # Return a bipartite graph with L3-L3 edges converted to L3-L2-L3
-    def to_bipartite(self):
+    def __to_bipartite(self):
         next_virtual_vertex_id= self.__next_vertex_id
         types= []
         for i in range(self.vertex_count()):
@@ -166,8 +210,8 @@ class MRINFO:
                     edges.append((head_n.get_id(), tail_n.get_id()))
         return igraph.Graph.Bipartite(types, edges)
 
-    # -----[ to_pure_bipartite ]-------------------------------------
-    def to_pure_bipartite(self):
+    # -----[ __to_pure_bipartite ]-----------------------------------
+    def __to_pure_bipartite(self):
         types= []
         for i in range(self.vertex_count()):
             typ= self.__get_vertex_by_id(i).get_type()
@@ -185,106 +229,3 @@ class MRINFO:
                     continue
                 edges.append((head_n.get_id(), tail_n.get_id()))
         return igraph.Graph.Bipartite(types, edges)
-
-# -----[ test1 ]-----------------------------------------------------
-def test1(filename):
-    g= MRINFO.load(filename)
-
-    l2_vertices= [idx for idx in range(g.vcount()) if not(g.vs["type"][idx])]
-    l3_vertices= [idx for idx in range(g.vcount()) if g.vs["type"][idx]]
-    
-    print "Number of vertices: %d" % (g.vcount())
-    print "Number of L2 vertices: %d" % (len(l2_vertices))
-    print "Number of L3 vertices: %d" % (len(l3_vertices))
-    print "Number of edges: %d" % (g.ecount())
-    clusters= g.clusters()
-    print "Number of connected components: %d" % (len(clusters))
-    print "Size of largest connected component: %d" % (clusters.giant().vcount())
-
-    degrees= g.degree()
-    l2_degrees= g.degree(l2_vertices)
-    l3_degrees= g.degree(l3_vertices)
-    max_degree= g.maxdegree()
-    print "Highest degree: %d" % (max_degree)
-    degrees_hist= numpy.histogram(degrees, max_degree)
-    l2_degrees_hist= numpy.histogram(l2_degrees, max_degree)
-    l3_degrees_hist= numpy.histogram(l3_degrees, max_degree)
-
-
-    print "MLE (overall): %.20f" % (Pareto.mle(degrees))
-    print "MLE (L2): %.20f" % (Pareto.mle(l2_degrees))
-    print "MLE (L2): %.20f" % (Pareto.mle(l2_degrees, 2.0))
-    print "MLE (L3): %.20f" % (Pareto.mle(l3_degrees))
-
-
-    plt.figure()
-    plt.suptitle(filename)
-    plt.subplot(3, 2, 1)
-    plt.title("Overall degree distribution", fontsize=10)
-    plt.hist(degrees, bins=max_degree, range=(0, max_degree), cumulative=False, normed=False, histtype='bar')
-    plt.subplot(3, 2, 2)
-    plt.title("(log-log)", fontsize=10)
-    plt.grid()
-    plt.loglog(range(0, max_degree), degrees_hist[0], 'o')
-    plt.subplot(3, 2, 3)
-    plt.title("L2 degree distribution", fontsize=10)
-    plt.hist(l2_degrees, bins=max_degree, range=(0, max_degree), cumulative=False, normed=False, histtype='bar')
-    plt.subplot(3, 2, 4)
-    plt.title("(log-log)", fontsize=10)
-    plt.grid()
-    plt.loglog(range(0, max_degree), l2_degrees_hist[0], 'o')
-    plt.subplot(3, 2, 5)
-    plt.title("L3 degree distribution", fontsize=10)
-    plt.hist(l3_degrees, bins=max_degree, range=(0, max_degree), cumulative=False, normed=False, histtype='bar')
-    plt.subplot(3, 2, 6)
-    plt.title("(log-log)", fontsize=10)
-    plt.grid()
-    plt.loglog(range(0, max_degree), l3_degrees_hist[0], 'o')
-    plt.show()
-    
-    #l2_degrees= g.degree([id for id where g.types[id] == False])
-
-    return
-
-# -----[ test2 ]-----------------------------------------------------
-def test2(filename):
-    mi= MRINFO(filename)
-    print "Number of nodes:", mi.vertex_count()
-    print "Number of L2 nodes: ", mi.vertex_count(MRINFO_VERTEX.L2)
-    print "Number of L3 nodes: ", mi.vertex_count(MRINFO_VERTEX.L3)
-    print "Number of edges: ", mi.edge_count()
-    print "> complete flat graph"
-    g= mi.to_graph()
-    print g
-    print "> pure L3/L3 flat graph"
-    g= mi.to_l3l3_graph()
-    print g
-    print "> bipartite graph"
-    g= mi.to_bipartite()
-    print g
-    print "> pure bipartite graph"
-    g= mi.to_pure_bipartite()
-    print g
-    return
-
-# -----[ main ]------------------------------------------------------
-#
-# -------------------------------------------------------------------
-def main():
-    if len(sys.argv) != 2:
-        usage()
-        sys.exit(-1)
-    #test1(sys.argv[1])
-    test2(sys.argv[1])
-    return
-
-
-if __name__ == "__main__":
-    import igraph
-    import sys
-    import numpy
-    import matplotlib
-    matplotlib.use("TkAgg")
-    import matplotlib.pyplot as plt
-    from pareto import Pareto
-    main()
