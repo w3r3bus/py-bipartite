@@ -7,6 +7,7 @@
 
 import random
 import math
+import util
 
 class Pareto:
 
@@ -126,13 +127,70 @@ def test_pareto_sample(range_a, range_b, num_samples, rounding="ROUND"):
     return
     
 
-def main():
-    #num_samples= 1000000
-    num_samples=1000
-    #test_pareto_sample(range(3), range(2), num_samples)
-    test_pareto_sample([1.5, 2.0, 2.5], [1.0, 2.0], num_samples, rounding="ROUND")
-    
+def main(argv):
+    if len(argv) < 2:
+        sys.stderr.write("not enough arguments\n");
+        sys.exit(-1);
+    mode= argv[1]
+
+    if mode == "mle":
+        print "Reading data from stdin..."
+        samples= read_samples(sys.stdin)
+        print "MLE = %f" % (Pareto.mle(samples))
+
+    else:
+
+        if len(argv) < 4:
+            sys.stderr.write("not enough arguments\n")
+            sys.exit(-1)
+
+        alpha= float(argv[2])
+        beta= float(argv[3])
+
+        p= Pareto(alpha, beta)
+
+        if mode == "exp":
+            print "%f" % (p.expectation())
+
+        else:
+
+            if len(argv) < 5:
+                sys.stderr.write("not enough arguments\n")
+                sys.exit(-1)
+
+            size= int(argv[4])
+
+            if mode == "pdf":
+                for x in range(size):
+                    print "%d\t%.20f" % (x, p.pmf(x))
+
+            elif mode == "cdf":
+                for x in range(size):
+                    print "%d\t%.20f" % (x, p.cdf(x))
+
+            elif mode == "random":
+                sample_size= 1000
+                freq= {}
+                samples= []
+                for i in range(size):
+                    if (i % 1000) == 0:
+                        print >> sys.stderr, "\rGenerating samples %d/%d" % \
+                              (i+1, size),
+                    r= p.random()
+                    samples.append(r)
+                print >> sys.stderr, "\rGenerating samples %d/%d" % \
+                      (i+1, size)
+                mean= 0
+                for r in sorted(samples):
+                    mean+= r
+                mean/= size
+                print "# mean = %f" % (mean)
+                for r in samples:
+                    print "%d" % (r)
+            
+            else:
+                sys.stderr.write("unknown mode \"%s\"\n" % (mode))
 
 if __name__ == "__main__":
     import sys
-    main()
+    main(sys.argv)
