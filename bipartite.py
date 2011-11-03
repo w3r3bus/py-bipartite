@@ -349,8 +349,8 @@ def bipartite_op_gen_pareto(g, params):
     info("  Expected total L2 degree = %.20f" % (l2_params.exp_tot_degree()))
     info("  Expected total L3 degree = %.20f" % (l3_params.exp_tot_degree()))
 
-    l2_dist= Pareto(l2_params.get_alpha(), l2_params.get_beta())
-    l3_dist= Pareto(l3_params.get_alpha(), l3_params.get_beta())
+    l2_dist= Pareto2(l2_params.get_alpha(), l2_params.get_beta())
+    l3_dist= Pareto2(l3_params.get_alpha(), l3_params.get_beta())
     (degrees2, degrees3)= \
         random_matching_degrees(l2_dist, l2_params.get_n(), \
                                 l3_dist, l3_params.get_n())
@@ -685,16 +685,16 @@ def _estimate_pareto_params(degrees, beta_range):
     return alphas
 
 # -----[ _plot_pareto_pdf ]------------------------------------------
-def _plot_pareto_pdf(ax, alpha, beta, degrees, max_degree, hist=False):
+def _plot_pareto_pdf(ax, alpha, xmin, degrees, max_degree, hist=False):
     degree_freq= []
-    #p= Pareto(alpha, beta)
-    p= Zipf(alpha, max_degree)
+    #p= Pareto2(alpha, xmin)
+    p= Zipf(alpha, max_degree, xmin)
     n= 0
     for k in degrees:
-        if k >= beta:
+        if k >= xmin:
             n+= 1
     total= 0
-    xrange= range(beta, max_degree, 1)
+    xrange= range(xmin, max_degree, 1)
     for k in xrange:
         pdf= p.pdf(k)
         if not(hist):
@@ -823,10 +823,10 @@ def _bipartite_op_stats_bipartite(g, output=None):
 
     # L2/L3 power law exponents estimators
     info("  Maximum Likelihood Estimator:")
-    l2_beta_range= range(1, 4)
-    l2_mle= _estimate_pareto_params(l2_degrees, l2_beta_range)
-    for beta in l2_beta_range:
-        info("    alpha (L2, xm=%d): %.20f" % (beta, l2_mle[beta]))
+    l2_xmin_range= range(1, 4)
+    l2_mle= _estimate_pareto_params(l2_degrees, l2_xmin_range)
+    for xmin in l2_xmin_range:
+        info("    alpha (L2, xm=%d): %.20f" % (xmin, l2_mle[xmin]))
     #l3_mle= Pareto.mle(l3_degrees)
     l3_mle= Zipf.mle(l3_degrees)
     info("    alpha (L3, xm=1): %.20f" % (l3_mle))
@@ -836,8 +836,8 @@ def _bipartite_op_stats_bipartite(g, output=None):
         fig= plt.figure()
         ax= plt.subplot(1, 1, 1)
         _plot_degree_hist(ax, l2_degrees, max_degree)
-        for beta in l2_beta_range:
-            _plot_pareto_pdf(ax, l2_mle[beta], beta, l2_degrees, max_degree, hist=False)
+        for xmin in l2_xmin_range:
+            _plot_pareto_pdf(ax, l2_mle[xmin], xmin, l2_degrees, max_degree, hist=False)
         filename= "l2-degree-hist-%s" % (output)
         info("  Create \"%s\"" % (filename))
         fig.savefig(filename)
@@ -845,8 +845,8 @@ def _bipartite_op_stats_bipartite(g, output=None):
         fig= plt.figure()
         ax= plt.subplot(1, 1, 1)
         _plot_degree_dist_loglog(ax, l2_degrees, max_degree)
-        for beta in l2_beta_range:
-            _plot_pareto_pdf(ax, l2_mle[beta], beta, l2_degrees, max_degree)
+        for xmin in l2_xmin_range:
+            _plot_pareto_pdf(ax, l2_mle[xmin], xmin, l2_degrees, max_degree)
         filename= "l2-degree-dist-loglog-%s" % (output)
         info("  Create \"%s\"" % (filename))
         fig.savefig(filename)
@@ -872,8 +872,8 @@ def _bipartite_op_stats_bipartite(g, output=None):
         _plot_degree_hist(ax, l2_degrees, max_degree)
         ax= plt.subplot(2, 2, 2)
         _plot_degree_dist_loglog(ax, l2_degrees, max_degree)
-        for beta in l2_beta_range:
-            _plot_pareto_pdf(ax, l2_mle[beta], beta, l2_degrees, max_degree)
+        for xmin in l2_xmin_range:
+            _plot_pareto_pdf(ax, l2_mle[xmin], xmin, l2_degrees, max_degree)
 
         ax= plt.subplot(2, 2, 3)
         _plot_degree_hist(ax, l3_degrees, max_degree)
