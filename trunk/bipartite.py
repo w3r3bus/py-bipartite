@@ -647,7 +647,7 @@ def bipartite_op_summary(g, params):
 def bipartite_op_giant(g, params):
     if (g == None):
         error("no graph to extract largest component")
-    print "  Extract largest connected component"
+    info("  Extract largest connected component")
     return g.clusters().giant()
 
 
@@ -657,7 +657,7 @@ def bipartite_op_giant(g, params):
 def bipartite_op_project(g, params):
     if (g == None):
         error("no graph to project")
-    print "  Project onto L3"
+    info("  Project onto L3")
     (g_l2, g_l3)= g.bipartite_projection()
     for v in g_l3.vs:
         v["type"]= TYPE_L3
@@ -672,7 +672,7 @@ def bipartite_op_orphans(g, params):
         error("no graph to remove orphans from")
     orphans= [idx for idx in range(g.vcount()) if g.degree(idx)==0]
     g.delete_vertices(orphans)
-    print "  Number of orphan nodes removed: %d" % (len(orphans))
+    info("  Number of orphan nodes removed: %d" % (len(orphans)))
     return g
 
 
